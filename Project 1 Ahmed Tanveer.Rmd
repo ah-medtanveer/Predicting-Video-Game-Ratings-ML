@@ -1,0 +1,279 @@
+---
+title: "Predict Video Game Ratings - Project 1"
+author: "Ahmed Tanveer"
+date: "2024-02-11"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# What we doing?
+
+In this project, I wanted to see if I could make an application that could predict 
+what rating a game would get, based upon certain inputs. I would create this model 
+prediction using Machine Learning in R by using example data to train a model. 
+I want to preface that I have not used Machine Learning techniques before so there 
+will be a lot of experimenting that will happen here today.
+
+
+# Let's Begin
+
+First things first, let's import our data. I found the data we'll be using on Kaggle.
+I got inspiration for doing something relating to video game ratings from the sample 
+projects provided and happened to stumble upon this dataset that would **hopefully** 
+provide a beginner to Machine Learning like me good clean data to begin with. This dataset 
+contains multiple columns with binary values about whether a game does or does not contain 
+certain aspects (ex. hasDrugUse, hasAlchohol, hasSuggestiveThemes, hasBlood, etc.). It also lists 
+the Title and actual ESRP rating for the games. With this information we should be able to train a 
+model using Machine Learning to be able to accurately predict what rating a game will get based upon 
+giving a model these inputs.
+
+```{r}
+
+test_dataset <- read.csv("/Users/ahmed/Documents/DAT 301/Project 1/test_esrb.csv")
+
+```
+
+
+# Choosing a Model?
+
+It was a bit overwhelming to choose a Machine Learning Model with all the different possible options 
+so I decided to start with the simplest sounding one, and change it if it didn't meet the requirements that 
+I needed for this project. For me, it's easiest to jump in and try out different methods and see what works. 
+
+
+I began with Logistical Regression...Which I quickly learned would not work with my model. 
+The issue here, was that Logistical Regression seemed to require the data values to be all binary; however, 
+my *test_dataset$esrp_ratings* was a character output. I could make it into a binary value, but with having 3 different 
+options for ESRP ratings, it seemed the better choice would be to choose a different model.
+
+
+I then choose to use a Random Forest Model. I choose this model because of it's ease to 
+implement and it appeared to be a degree more sophisticated in terms of what it could compute compared to 
+Logistical Regression. In order to use this in R, I had to import the ***randomForest*** library. I also imported 
+a couple other libraries that would prove to be useful in either the computations or analysis.
+
+```{r, echo=TRUE, message=FALSE}
+library(caret)
+library(dplyr)
+library(ggplot2)
+library(randomForest)
+```
+
+
+## Random Forest Modeling
+
+To begin a Random Forest model, we prove the randomForest function the desired output to be evaluated, how many trees 
+we want to compute (the more the better, but eats into computation time), and the dataset we have.
+
+
+```{r, eval = FALSE, echo=TRUE}
+model <- randomForest(esrb_rating ~ ., ntree = 10000 ,data = test_dataset)
+```
+
+However, this threw many errors. There appeared to be messy data that for the most part got 
+cleaned up by the following code. Additionally, we will be setting the seed here to account for variability and 
+to access our code better.
+
+```{r, echo = TRUE}
+
+set.seed(12345)
+
+test_dataset$esrb_rating <- as.factor(test_dataset$esrb_rating)
+
+model <- randomForest(esrb_rating ~ ., ntree = 1000 ,data = test_dataset)
+
+```
+
+From this we have created a model to base future predictions upon. But before we go into that, let's analyze what this model can tell 
+us so far.
+
+```{r}
+
+print(model)
+
+```
+
+The most important parts of this model are the OOB estimate and the generated Confusion Matrix.
+
+We can see that the OOB estimate of Error Rate is below 17% which is generally seen as pretty good; however, we 
+can further extrapolate this data from the Confusion Matrix. While ***Confusing*** at first (good one ahmed), 
+the Confusion Matrix shows us the actual values in the rows, and the predicted values from the columns, with the 
+% error in an additonal fifth column. We can see that the model is highly accurate with the E rating with only a 2% error rate; 
+however, gets most of the T ratings wrong with a large 25% error rate.
+
+We can also then plot this model to visualize this data again
+
+```{r, echo=TRUE}
+
+plot(model, main ="Plot of Model Error Rates")
+
+```
+
+From this graph, we can see the graphical version of the Confusion Matrix, but doesn't really 
+tell us too much more about what we want to see. Rather than going into this plot, let's create some 
+better information to analyze.
+
+Instead of plotting the Error Rates, let's see what factors were most and least important in figuring out 
+what ESRP rating a game will get.
+
+
+```{r, echo=TRUE}
+
+#From the model, extract the importance values
+imp_df <- as.data.frame(importance(model))
+
+#Add rowNames as columnNames for plotting
+imp_df$RowNames <- rownames(importance(model))
+
+#Arrange for formatting
+imp_df <- arrange(imp_df, desc(MeanDecreaseGini))
+
+#Top 10 most important values in factoring ESRP Rating
+head(imp_df, 10)
+
+#Top 10 least important values in factoring ESRP Rating
+tail(imp_df,10)
+
+#Plot a barplot
+ggplot(data = imp_df, aes(x=RowNames, y=MeanDecreaseGini)) + 
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(title = "Importance of values")
+
+
+```
+
+Here, we can see actually useful data where now we can see which values were most important in 
+determining what ratings each game would get. Now we don't know from here what rating were most attributed to certain categories. 
+But we can see which ones we're the strongest. From this data, we can see that violence seems to be at the top of the rankings. 
+Whereas, sexual themes and mature humor we closer to the bottom. 
+
+This may pose the question to ourselves. Shouldn't mature humor be an indicator for a more mature game? 
+While this may be true, we need to keep in mind that every game has multiple tags for them. A game with mature humor 
+is likely to also contain sexual themes, but these sexual themes could also be categorized into strong sexual content as well. 
+Essentially meaning, that because of these overlaps, there ends up being a few tags that, upon first analysis, look like they are the 
+majority deciding factors on a games rating, when actually, it is that because of overlapping tags, that tags we would assume should 
+immediately indicate that a game is mature seem to have lower power in deciding a games rating.
+
+
+## Running this Model on more data
+
+From the same Kaggle dataset, we also have a set of data to then run this model on to see how accurate our model really is.
+
+```{r, echo=TRUE}
+
+new_data <- read.csv("/Users/ahmed/Documents/DAT 301/Project 1/Video_games_esrb_rating.csv")
+
+predictions <- predict(model, newdata = new_data)
+confusionMatrix(predictions, as.factor(new_data$esrb_rating))
+
+print("Actual Number: ")
+table(new_data$esrb_rating)
+print("Predicted Number: ")
+summary(predictions)
+
+```
+
+This outputs a great deal of information, and essentially tells us that the model is pretty accurate at finding 
+what games are rated E and M, the two edges of the given ratings. However, the model seems to have more trouble pinpointing what exactly 
+makes a game rated ET or especially rated T. 
+
+
+## Anyway to clean up the data more?
+
+There were a couple of methods to try to make my results a big more accurate. 
+The two most significant methods of getting accurate results are to change factors in the 
+machine learning process of the code, or to clean up the inputted data. The main method that I utilized 
+was to clean up the inputted data. I choose this method primarily, as I believed that the since the dataset 
+was relatively simple to work with, compared to how complicated I knew some data sets could be, I could pick and 
+choose which columns to input into the model with the newfound knowledge from the previous step of analyzing the 
+output importance data.
+
+To begin, let me list out the column names of the beginning data set.
+
+```{r, echo=TRUE}
+
+colnames(test_dataset)
+
+```
+
+I then went through and tried remove any tags that had overlaps with each other, leaving us with
+
+
+```{r, echo=FALSE}
+
+# col_To_Remove <- c(1,2,4,6,7,10,11,14,15,16,17,18,19,20,21,22,24,26,28,30,31)
+col_To_Remove <- c(1,2,22)
+newTest_Data <- test_dataset[, -col_To_Remove]
+colnames(newTest_Data)
+
+
+```
+
+With these much limited columns, I then re-ran all the tests before to create the new model with this condensed data set.
+
+```{r}
+
+newTest_Data$esrb_rating <- as.factor(newTest_Data$esrb_rating)
+
+model <- randomForest(esrb_rating ~ ., ntree = 1000 ,data = newTest_Data)
+
+print(model)
+
+predictions <- predict(model, newdata = new_data)
+confusionMatrix(predictions, as.factor(new_data$esrb_rating))
+
+print("Actual Number: ")
+table(new_data$esrb_rating)
+print("Predicted Number: ")
+summary(predictions)
+
+```
+
+
+
+Overall, the same level of Error Rates were occurring on this new sample set, so I decided to dive into the 
+actual raw data to see if I could come up with any reasonings as to why this was. After looking at this data, 
+I found a significant amount of games which has the same markings for multiple tags and outputted different results. 
+Attempting to filter these tags down even more than we had previously led to even with Error Rates, with the model 
+getting 100% of the E rated games **incorrect**. Thus with the OOD estimate of error rate being 16.2%, I believe that the 
+Random Forest Model allows for us to judge what ratings games would get using Machine Learning with a Training Data Set.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
